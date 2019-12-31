@@ -1,24 +1,31 @@
 package com.tech.playinsdk.webrtc;
 
+import android.graphics.Bitmap;
 import android.os.Bundle;
 import android.util.Log;
+import android.view.MotionEvent;
+import android.view.View;
 
 import androidx.appcompat.app.AppCompatActivity;
 
 import org.java_websocket.WebSocket;
 import org.java_websocket.client.WebSocketClient;
 import org.java_websocket.handshake.ServerHandshake;
+import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
+import org.webrtc.AudioTrack;
 import org.webrtc.Camera1Enumerator;
 import org.webrtc.DefaultVideoDecoderFactory;
 import org.webrtc.DefaultVideoEncoderFactory;
 import org.webrtc.EglBase;
+import org.webrtc.EglRenderer;
 import org.webrtc.IceCandidate;
 import org.webrtc.MediaConstraints;
 import org.webrtc.MediaStream;
 import org.webrtc.PeerConnection;
 import org.webrtc.PeerConnectionFactory;
+import org.webrtc.RendererCommon;
 import org.webrtc.SessionDescription;
 import org.webrtc.SurfaceTextureHelper;
 import org.webrtc.SurfaceViewRenderer;
@@ -34,6 +41,7 @@ import java.security.SecureRandom;
 import java.security.cert.X509Certificate;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.ArrayBlockingQueue;
 
 import javax.net.ssl.HostnameVerifier;
 import javax.net.ssl.HttpsURLConnection;
@@ -43,11 +51,67 @@ import javax.net.ssl.SSLSocketFactory;
 import javax.net.ssl.TrustManager;
 import javax.net.ssl.X509TrustManager;
 
-public class GenymotionActivity extends AppCompatActivity {
+public class GenymotionActivity extends AppCompatActivity implements View.OnTouchListener {
 
     PeerConnectionFactory peerConnectionFactory;
     PeerConnection peerConnection;
     SurfaceViewRenderer remoteView;
+
+    private ArrayBlockingQueue<String> sendQueue = new ArrayBlockingQueue<>(200);
+    private Thread mWriteThread;
+    public class WriteThread extends Thread {
+        @Override
+        public void run() {
+            try {
+                while (!isInterrupted()) {
+                    String sendStr = sendQueue.take();
+                    client.send(sendStr);
+                }
+            } catch (Exception e) {
+                Log.e("TAG", "WriteThread send error： " + e);
+            }
+        }
+    }
+
+    @Override
+    public boolean onTouch(View v, MotionEvent event) {
+        int action = event.getAction();
+        int mode = -1;
+        if (action == MotionEvent.ACTION_DOWN) {
+            mode = 0;
+        } else if (action == MotionEvent.ACTION_MOVE) {
+            mode = 2;
+        } else if (action == MotionEvent.ACTION_UP) {
+            mode = 1;
+        }
+        try {
+            JSONObject obj = new JSONObject()
+                    .putOpt("type", "MULTI_TOUCH")
+                    .putOpt("mode", mode)
+                    .putOpt("nb", event.getPointerCount());
+            JSONArray points = new JSONArray();
+            for (int i = 0; i < event.getPointerCount(); i++) {
+                points.put(new JSONObject()
+                        .putOpt("x", getXcoordinate(event.getX(i)))
+                        .putOpt("y", getYcoordinate(event.getY(i))));
+            }
+            obj.putOpt("points", points);
+            sendQueue.offer(obj.toString());
+        } catch (JSONException e) {
+            e.printStackTrace();
+        }
+        return true;
+    }
+
+    private int destWidth = 360;
+    private int destHeight = 640;
+    private float getXcoordinate(float srcX) {
+        return srcX * destWidth / remoteView.getWidth();
+    }
+    private float getYcoordinate(float srcY) {
+        return srcY * destHeight / remoteView.getHeight();
+
+    }
 
     private class MyWebSocketClient extends WebSocketClient {
 
@@ -134,28 +198,61 @@ public class GenymotionActivity extends AppCompatActivity {
         setContentView(R.layout.activity_genymotion);
         init();
 
-        client = new MyWebSocketClient(URI.create("wss://13.231.195.158"));
+        client = new MyWebSocketClient(URI.create("wss://52.68.173.154"));
+        client.setTcpNoDelay(true);
         initWebSocketClient(client);
         client.connect();
+
+        mWriteThread = new WriteThread();
+        mWriteThread.start();
+    }
+
+    @Override
+    protected void onDestroy() {
+        if (null != mWriteThread) {
+            mWriteThread.interrupt();
+        }
+        super.onDestroy();
     }
 
     MediaStream mediaStream;
-
+    EglBase.Context eglBaseContext;
     private void init() {
-        EglBase.Context eglBaseContext = EglBase.create().getEglBaseContext();
+        eglBaseContext = EglBase.create().getEglBaseContext();
 
         remoteView = findViewById(R.id.remoteView);
         remoteView.setMirror(false);
-        remoteView.init(eglBaseContext, null);
+        remoteView.setOnTouchListener(this);
+        remoteView.setEnableHardwareScaler(true);
+        remoteView.init(eglBaseContext, new RendererCommon.RendererEvents() {
+            @Override
+            public void onFirstFrameRendered() {
+                Log.e("TAG", "onFirstFrameRendered");
+            }
+
+            @Override
+            public void onFrameResolutionChanged(int i, int i1, int i2) {
+                Log.e("TAG", "onFrameResolutionChanged " + i + " -- " + i1 + " -- " + i2);
+                runOnUiThread(new Runnable() {
+                    @Override
+                    public void run() {
+                        remoteView.setScalingType(RendererCommon.ScalingType.SCALE_ASPECT_FIT, RendererCommon.ScalingType.SCALE_ASPECT_FIT);
+
+                    }
+                });
+
+            }
+        });
+
 
         PeerConnectionFactory.initialize(PeerConnectionFactory.InitializationOptions
                 .builder(this)
                 .createInitializationOptions());
         PeerConnectionFactory.Options options = new PeerConnectionFactory.Options();
-        DefaultVideoEncoderFactory defaultVideoEncoderFactory =
-                new DefaultVideoEncoderFactory(eglBaseContext, true, true);
-        DefaultVideoDecoderFactory defaultVideoDecoderFactory =
-                new DefaultVideoDecoderFactory(eglBaseContext);
+
+        DefaultVideoEncoderFactory defaultVideoEncoderFactory = new DefaultVideoEncoderFactory(eglBaseContext, true, true);
+        DefaultVideoDecoderFactory defaultVideoDecoderFactory = new DefaultVideoDecoderFactory(eglBaseContext);
+
         peerConnectionFactory = PeerConnectionFactory.builder()
                 .setOptions(options)
                 .setVideoEncoderFactory(defaultVideoEncoderFactory)
@@ -180,11 +277,14 @@ public class GenymotionActivity extends AppCompatActivity {
             public void onAddStream(MediaStream mediaStream) {
                 super.onAddStream(mediaStream);
                 VideoTrack remoteVideoTrack = mediaStream.videoTracks.get(0);
+//                AudioTrack remoteAudioTrack = mediaStream.audioTracks.get(0);
+                Log.e("TAG", "mediaStream ------------> " + mediaStream.audioTracks);
                 runOnUiThread(() -> {
                     remoteVideoTrack.addSink(remoteView);
                 });
             }
         });
+        peerConnection.setAudioPlayout(true);
         peerConnection.addStream(mediaStream);
     }
 
