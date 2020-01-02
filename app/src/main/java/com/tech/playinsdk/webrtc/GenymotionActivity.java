@@ -1,25 +1,25 @@
 package com.tech.playinsdk.webrtc;
 
-import android.graphics.Bitmap;
+import android.media.AudioManager;
 import android.os.Bundle;
 import android.util.Log;
+import android.view.KeyEvent;
 import android.view.MotionEvent;
 import android.view.View;
 
 import androidx.appcompat.app.AppCompatActivity;
 
-import org.java_websocket.WebSocket;
+import com.tbruyelle.rxpermissions2.RxPermissions;
+
 import org.java_websocket.client.WebSocketClient;
 import org.java_websocket.handshake.ServerHandshake;
 import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
 import org.webrtc.AudioTrack;
-import org.webrtc.Camera1Enumerator;
 import org.webrtc.DefaultVideoDecoderFactory;
 import org.webrtc.DefaultVideoEncoderFactory;
 import org.webrtc.EglBase;
-import org.webrtc.EglRenderer;
 import org.webrtc.IceCandidate;
 import org.webrtc.MediaConstraints;
 import org.webrtc.MediaStream;
@@ -27,26 +27,17 @@ import org.webrtc.PeerConnection;
 import org.webrtc.PeerConnectionFactory;
 import org.webrtc.RendererCommon;
 import org.webrtc.SessionDescription;
-import org.webrtc.SurfaceTextureHelper;
 import org.webrtc.SurfaceViewRenderer;
-import org.webrtc.VideoCapturer;
-import org.webrtc.VideoSource;
 import org.webrtc.VideoTrack;
 
-import java.io.IOException;
 import java.net.URI;
-import java.security.KeyManagementException;
-import java.security.NoSuchAlgorithmException;
 import java.security.SecureRandom;
 import java.security.cert.X509Certificate;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.ArrayBlockingQueue;
 
-import javax.net.ssl.HostnameVerifier;
-import javax.net.ssl.HttpsURLConnection;
 import javax.net.ssl.SSLContext;
-import javax.net.ssl.SSLSession;
 import javax.net.ssl.SSLSocketFactory;
 import javax.net.ssl.TrustManager;
 import javax.net.ssl.X509TrustManager;
@@ -192,12 +183,66 @@ public class GenymotionActivity extends AppCompatActivity implements View.OnTouc
         }
     }
 
+    final RxPermissions rxPermissions = new RxPermissions(this);
+
+    @Override
+    public boolean onKeyDown(int keyCode, KeyEvent event) {
+        switch (keyCode) {
+            case KeyEvent.KEYCODE_VOLUME_UP:
+                mAudioManager.adjustStreamVolume(AudioManager.STREAM_VOICE_CALL, AudioManager.ADJUST_RAISE, AudioManager.FLAG_SHOW_UI);
+                return true;
+            case KeyEvent.KEYCODE_VOLUME_DOWN:
+                mAudioManager.adjustStreamVolume(AudioManager.STREAM_VOICE_CALL, AudioManager.ADJUST_LOWER, AudioManager.FLAG_SHOW_UI);
+                return true;
+            default:
+                break;
+        }
+        return super.onKeyDown(keyCode, event);
+    }
+
+    AudioManager mAudioManager;
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_genymotion);
-        init();
 
+        mAudioManager = (AudioManager) getSystemService(AUDIO_SERVICE);
+        mAudioManager.setMode(AudioManager.MODE_IN_CALL);
+        mAudioManager.setSpeakerphoneOn(true);
+
+//        rxPermissions
+//                .request(Manifest.permission.CAMERA, Manifest.permission.RECORD_AUDIO)
+//                .subscribe(granted -> {
+//                    if (granted) {
+//                        init();
+//                    } else {
+//                        // Oups permission denied
+//                    }
+//                });
+
+        init();
+    }
+
+    @Override
+    protected void onDestroy() {
+        if (null != mWriteThread) {
+            mWriteThread.interrupt();
+        }
+        if (null != client) {
+            client.close();
+        }
+        if (null != peerConnection) {
+            peerConnection.close();
+        }
+        super.onDestroy();
+    }
+
+    private void init() {
+        initWebrtc();
+        initSocket();
+    }
+
+    private void initSocket() {
         client = new MyWebSocketClient(URI.create("wss://52.68.173.154"));
         client.setTcpNoDelay(true);
         initWebSocketClient(client);
@@ -207,17 +252,9 @@ public class GenymotionActivity extends AppCompatActivity implements View.OnTouc
         mWriteThread.start();
     }
 
-    @Override
-    protected void onDestroy() {
-        if (null != mWriteThread) {
-            mWriteThread.interrupt();
-        }
-        super.onDestroy();
-    }
-
     MediaStream mediaStream;
     EglBase.Context eglBaseContext;
-    private void init() {
+    private void initWebrtc() {
         eglBaseContext = EglBase.create().getEglBaseContext();
 
         remoteView = findViewById(R.id.remoteView);
@@ -233,14 +270,6 @@ public class GenymotionActivity extends AppCompatActivity implements View.OnTouc
             @Override
             public void onFrameResolutionChanged(int i, int i1, int i2) {
                 Log.e("TAG", "onFrameResolutionChanged " + i + " -- " + i1 + " -- " + i2);
-                runOnUiThread(new Runnable() {
-                    @Override
-                    public void run() {
-                        remoteView.setScalingType(RendererCommon.ScalingType.SCALE_ASPECT_FIT, RendererCommon.ScalingType.SCALE_ASPECT_FIT);
-
-                    }
-                });
-
             }
         });
 
@@ -258,11 +287,15 @@ public class GenymotionActivity extends AppCompatActivity implements View.OnTouc
                 .setVideoEncoderFactory(defaultVideoEncoderFactory)
                 .setVideoDecoderFactory(defaultVideoDecoderFactory)
                 .createPeerConnectionFactory();
-
-        VideoSource videoSource = peerConnectionFactory.createVideoSource(true);
-        VideoTrack videoTrack = peerConnectionFactory.createVideoTrack("100", videoSource);
         mediaStream = peerConnectionFactory.createLocalMediaStream("mediaStream");
-        mediaStream.addTrack(videoTrack);
+
+//        VideoSource videoSource = peerConnectionFactory.createVideoSource(true);
+//        VideoTrack videoTrack = peerConnectionFactory.createVideoTrack("100", videoSource);
+//        mediaStream.addTrack(videoTrack);
+
+//        AudioSource audioSource = peerConnectionFactory.createAudioSource(new MediaConstraints());
+//        AudioTrack audioTrack = peerConnectionFactory.createAudioTrack("audiotrack", audioSource);
+//        mediaStream.addTrack(audioTrack);
 
         List<PeerConnection.IceServer> iceServers = new ArrayList<>();
         iceServers.add(PeerConnection.IceServer.builder("stun:stun.genymotion.com:3478").createIceServer());
@@ -276,19 +309,32 @@ public class GenymotionActivity extends AppCompatActivity implements View.OnTouc
             @Override
             public void onAddStream(MediaStream mediaStream) {
                 super.onAddStream(mediaStream);
-                VideoTrack remoteVideoTrack = mediaStream.videoTracks.get(0);
-//                AudioTrack remoteAudioTrack = mediaStream.audioTracks.get(0);
-                Log.e("TAG", "mediaStream ------------> " + mediaStream.audioTracks);
-                runOnUiThread(() -> {
-                    remoteVideoTrack.addSink(remoteView);
-                });
+                if (mediaStream.videoTracks.size() > 0) {
+                    VideoTrack remoteVideoTrack = mediaStream.videoTracks.get(0);
+                    runOnUiThread(() -> {
+                        remoteVideoTrack.addSink(remoteView);
+                    });
+                }
+                if (mediaStream.audioTracks.size() > 0) {
+                    AudioTrack remoteAudioTrack = mediaStream.audioTracks.get(0);
+                    remoteAudioTrack.setVolume(0.3);
+                }
             }
         });
-        peerConnection.setAudioPlayout(true);
+        peerConnection.setAudioPlayout(false);
         peerConnection.addStream(mediaStream);
     }
 
     private void sendOffer() {
+//        MediaConstraints audioConstraints = new MediaConstraints();     //回声消除
+//        audioConstraints.mandatory.add(new MediaConstraints.KeyValuePair("googEchoCancellation", "true"));  //自动增益
+//        audioConstraints.mandatory.add(new MediaConstraints.KeyValuePair("googAutoGainControl", "true"));   //高音过滤
+//        audioConstraints.mandatory.add(new MediaConstraints.KeyValuePair("googHighpassFilter", "true"));
+
+        MediaConstraints audioConstraints = new MediaConstraints();
+        audioConstraints.mandatory.add(new MediaConstraints.KeyValuePair("OfferToReceiveAudio", "true"));
+        audioConstraints.mandatory.add(new MediaConstraints.KeyValuePair("OfferToReceiveVideo", "true"));
+
         peerConnection.createOffer(new SdpAdapter("local offer sdp") {
             @Override
             public void onCreateSuccess(SessionDescription sessionDescription) {
@@ -304,7 +350,7 @@ public class GenymotionActivity extends AppCompatActivity implements View.OnTouc
                     e.printStackTrace();
                 }
             }
-        }, new MediaConstraints());
+        }, audioConstraints);
     }
 
     private void receiveAnswer(String message) {
