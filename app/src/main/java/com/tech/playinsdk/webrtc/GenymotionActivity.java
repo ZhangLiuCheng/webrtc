@@ -183,42 +183,30 @@ public class GenymotionActivity extends AppCompatActivity implements View.OnTouc
         }
     }
 
-    final RxPermissions rxPermissions = new RxPermissions(this);
+//    @Override
+//    public boolean onKeyDown(int keyCode, KeyEvent event) {
+//        switch (keyCode) {
+//            case KeyEvent.KEYCODE_VOLUME_UP:
+//                mAudioManager.adjustStreamVolume(AudioManager.STREAM_VOICE_CALL, AudioManager.ADJUST_RAISE, AudioManager.FLAG_SHOW_UI);
+//                return true;
+//            case KeyEvent.KEYCODE_VOLUME_DOWN:
+//                mAudioManager.adjustStreamVolume(AudioManager.STREAM_VOICE_CALL, AudioManager.ADJUST_LOWER, AudioManager.FLAG_SHOW_UI);
+//                return true;
+//            default:
+//                break;
+//        }
+//        return super.onKeyDown(keyCode, event);
+//    }
 
-    @Override
-    public boolean onKeyDown(int keyCode, KeyEvent event) {
-        switch (keyCode) {
-            case KeyEvent.KEYCODE_VOLUME_UP:
-                mAudioManager.adjustStreamVolume(AudioManager.STREAM_VOICE_CALL, AudioManager.ADJUST_RAISE, AudioManager.FLAG_SHOW_UI);
-                return true;
-            case KeyEvent.KEYCODE_VOLUME_DOWN:
-                mAudioManager.adjustStreamVolume(AudioManager.STREAM_VOICE_CALL, AudioManager.ADJUST_LOWER, AudioManager.FLAG_SHOW_UI);
-                return true;
-            default:
-                break;
-        }
-        return super.onKeyDown(keyCode, event);
-    }
-
-    AudioManager mAudioManager;
+//    AudioManager mAudioManager;
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_genymotion);
 
-        mAudioManager = (AudioManager) getSystemService(AUDIO_SERVICE);
-        mAudioManager.setMode(AudioManager.MODE_IN_CALL);
-        mAudioManager.setSpeakerphoneOn(true);
-
-//        rxPermissions
-//                .request(Manifest.permission.CAMERA, Manifest.permission.RECORD_AUDIO)
-//                .subscribe(granted -> {
-//                    if (granted) {
-//                        init();
-//                    } else {
-//                        // Oups permission denied
-//                    }
-//                });
+//        mAudioManager = (AudioManager) getSystemService(AUDIO_SERVICE);
+//        mAudioManager.setMode(AudioManager.MODE_IN_CALL);
+//        mAudioManager.setSpeakerphoneOn(false);
 
         init();
     }
@@ -317,23 +305,17 @@ public class GenymotionActivity extends AppCompatActivity implements View.OnTouc
                 }
                 if (mediaStream.audioTracks.size() > 0) {
                     AudioTrack remoteAudioTrack = mediaStream.audioTracks.get(0);
-                    remoteAudioTrack.setVolume(0.3);
+                    remoteAudioTrack.setVolume(20);
                 }
             }
         });
-        peerConnection.setAudioPlayout(false);
         peerConnection.addStream(mediaStream);
     }
 
     private void sendOffer() {
-//        MediaConstraints audioConstraints = new MediaConstraints();     //回声消除
-//        audioConstraints.mandatory.add(new MediaConstraints.KeyValuePair("googEchoCancellation", "true"));  //自动增益
-//        audioConstraints.mandatory.add(new MediaConstraints.KeyValuePair("googAutoGainControl", "true"));   //高音过滤
-//        audioConstraints.mandatory.add(new MediaConstraints.KeyValuePair("googHighpassFilter", "true"));
-
-        MediaConstraints audioConstraints = new MediaConstraints();
-        audioConstraints.mandatory.add(new MediaConstraints.KeyValuePair("OfferToReceiveAudio", "true"));
-        audioConstraints.mandatory.add(new MediaConstraints.KeyValuePair("OfferToReceiveVideo", "true"));
+        MediaConstraints constraints = new MediaConstraints();
+//        constraints.mandatory.add(new MediaConstraints.KeyValuePair("OfferToReceiveAudio", "true"));
+        constraints.mandatory.add(new MediaConstraints.KeyValuePair("OfferToReceiveVideo", "true"));
 
         peerConnection.createOffer(new SdpAdapter("local offer sdp") {
             @Override
@@ -350,7 +332,7 @@ public class GenymotionActivity extends AppCompatActivity implements View.OnTouc
                     e.printStackTrace();
                 }
             }
-        }, audioConstraints);
+        }, constraints);
     }
 
     private void receiveAnswer(String message) {
