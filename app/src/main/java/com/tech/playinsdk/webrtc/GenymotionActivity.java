@@ -1,5 +1,6 @@
 package com.tech.playinsdk.webrtc;
 
+import android.content.Context;
 import android.media.AudioManager;
 import android.os.Bundle;
 import android.util.Log;
@@ -188,6 +189,14 @@ public class GenymotionActivity extends AppCompatActivity implements View.OnTouc
 //        constraints.mandatory.add(new MediaConstraints.KeyValuePair("minHeight", "640"));
 //        constraints.mandatory.add(new MediaConstraints.KeyValuePair("maxFrameRate", "1000"));
 //        constraints.mandatory.add(new MediaConstraints.KeyValuePair("minFrameRate", "1000"));
+
+        constraints.mandatory.add(new MediaConstraints.KeyValuePair("googNoiseSuppression", "true"));
+        constraints.mandatory.add(new MediaConstraints.KeyValuePair("googEchoCancellation", "true"));
+
+//        constraints.mandatory.add(new MediaConstraints.KeyValuePair(AUDIO_ECHO_CANCELLATION_CONSTRAINT, "false"));
+//        constraints.mandatory.add(new MediaConstraints.KeyValuePair(AUDIO_AUTO_GAIN_CONTROL_CONSTRAINT, "false"));
+//        constraints.mandatory.add(new MediaConstraints.KeyValuePair(AUDIO_HIGH_PASS_FILTER_CONSTRAINT, "false"));
+//        constraints.mandatory.add(new MediaConstraints.KeyValuePair(AUDIO_NOISE_SUPPRESSION_CONSTRAINT, "false"));
 
         peerConnection.createOffer(new SdpAdapter("local offer sdp") {
             @Override
